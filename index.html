@@ -1,0 +1,1374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#e9e7e1">
+<script>
+  // Pick day/night colors before the page paints, so it never flashes the wrong theme.
+  (function () {
+    var pref = 'auto';
+    try { pref = (JSON.parse(localStorage.getItem('ringme.settings')) || {}).theme || 'auto'; } catch (e) {}
+    var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  })();
+</script>
+<meta name="description" content="RingMe: a to-do list synced with Google Calendar that calls you when it's time.">
+<title>RingMe</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  /* Day: Nordic earth (stone, moss green with a soft glow) */
+  :root {
+    color-scheme: light;
+    --bg: #e9e7e1;
+    --card: #f6f5f1;
+    --text: #2d3a3e;
+    --muted: #6a777b;
+    --line: #d9d6cd;
+    --brand: #4f7d62;
+    --on-brand: #f6f5f1;
+    --brand-soft: #dde6de;
+    --done: #4f7d62;
+    --on-done: #f6f5f1;
+    --glow: 0 0 14px rgba(96, 178, 128, .55);
+    --glow-icon: drop-shadow(0 0 5px rgba(96, 178, 128, .7));
+    --text-glow: none;
+    --green: #1fb86a;
+    --red: #e5484d;
+    --shadow: 0 1px 2px rgba(45, 58, 62, .05), 0 4px 16px rgba(45, 58, 62, .06);
+    --call-bg: linear-gradient(165deg, #22302f 0%, #3c5f4b 60%, #4f7d62 100%);
+    --call-glow: 0 0 40px rgba(120, 210, 150, .45);
+  }
+  /* Night: Midnight glow (near-black, glowing white) */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0b0b10;
+    --card: #16161d;
+    --text: #f4f4f6;
+    --muted: #8b8b97;
+    --line: #26262f;
+    --brand: #ffffff;
+    --on-brand: #0b0b10;
+    --brand-soft: #22222b;
+    --done: #ffffff;
+    --on-done: #0b0b10;
+    --glow: 0 0 14px rgba(255, 255, 255, .45);
+    --glow-icon: drop-shadow(0 0 5px rgba(255, 255, 255, .75));
+    --text-glow: 0 0 12px rgba(255, 255, 255, .45);
+    --shadow: none;
+    --call-bg: #050507;
+    --call-glow: 0 0 40px rgba(255, 255, 255, .35);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: center; gap: 12px; padding: 8px 0 16px; }
+  header img { width: 40px; height: 40px; border-radius: 10px; box-shadow: var(--glow); }
+  header h1 { font-size: 22px; margin: 0; letter-spacing: -.01em; text-shadow: var(--text-glow); }
+  .theme-btn {
+    width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 12px; flex: none;
+    background: var(--brand-soft); color: var(--brand); box-shadow: none; display: grid; place-items: center;
+  }
+  .theme-btn svg { width: 20px; height: 20px; filter: var(--glow-icon); }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+  header .g { margin-left: auto; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: var(--shadow);
+  }
+  .card h2 { font-size: 16px; margin: 0 0 4px; }
+  .card .sub { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .between { justify-content: space-between; }
+  button, .btn {
+    font: inherit;
+    border: 0;
+    border-radius: 12px;
+    padding: 11px 16px;
+    background: var(--brand);
+    color: var(--on-brand);
+    font-weight: 600;
+    cursor: pointer;
+    min-height: 44px;
+    box-shadow: var(--glow);
+  }
+  button.ghost { background: var(--brand-soft); color: var(--brand); box-shadow: none; }
+  button.plain { box-shadow: none; }
+  button.plain { background: transparent; color: var(--muted); padding: 8px; min-height: 36px; }
+  button:disabled { opacity: .5; cursor: default; }
+  input, select, textarea {
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+    width: 100%;
+  }
+  textarea { min-height: 70px; resize: vertical; }
+  label.field { display: block; margin-bottom: 12px; }
+  label.field span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--done); box-shadow: var(--glow); }
+  .checks { display: grid; gap: 10px; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .toggle small { display: block; color: var(--muted); }
+  .toggle button { white-space: nowrap; flex: none; }
+  .switch { position: relative; width: 48px; height: 28px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .switch i { position: absolute; inset: 0; border-radius: 14px; background: var(--line); transition: .2s; }
+  .switch i::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px;
+    border-radius: 50%; background: #fff; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  }
+  .switch input:checked + i { background: var(--done); box-shadow: var(--glow); }
+  .switch input:checked + i::after { transform: translateX(20px); background: var(--on-done); }
+  .notice { background: var(--brand-soft); color: var(--text); border-radius: 12px; padding: 12px; font-size: 14px; margin-bottom: 14px; }
+  details summary { cursor: pointer; font-weight: 600; }
+  details[open] summary { margin-bottom: 12px; }
+
+  /* Quick add */
+  .qa-title { font-size: 17px; padding: 12px 14px; }
+  .qa-row { display: grid; grid-template-columns: 1.35fr 1fr 48px; gap: 8px; margin-top: 8px; }
+  .qa-row button { padding: 0; font-size: 24px; line-height: 1; }
+  .qa-row input { min-width: 0; padding: 10px 8px; font-size: 15px; }
+  .qa-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 14px; color: var(--muted); }
+  .qa-foot label { display: flex; align-items: center; gap: 10px; color: var(--text); }
+
+  /* Task list */
+  .progress { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 8px 0 4px; }
+  .progress { overflow: visible; }
+  .progress i { display: block; height: 100%; background: var(--done); border-radius: 3px; transition: width .3s; box-shadow: var(--glow); }
+  .day { display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 18px 0 8px; }
+  .day:first-child { margin-top: 4px; }
+  .task {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 10px 10px 12px; border-radius: 12px; border: 1px solid var(--line); margin-bottom: 8px;
+    background: var(--card);
+  }
+  .check {
+    width: 28px; height: 28px; min-height: 28px; padding: 0; border-radius: 50%; flex: none;
+    background: transparent; border: 2px solid var(--muted); display: grid; place-items: center;
+    color: var(--on-done); box-shadow: none;
+  }
+  .check svg { width: 16px; height: 16px; opacity: 0; }
+  .task.done .check { background: var(--done); border-color: var(--done); box-shadow: var(--glow); }
+  .task.done .check svg { opacity: 1; }
+  .task .info { flex: 1; min-width: 0; cursor: pointer; }
+  .task .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task.done .title { text-decoration: line-through; color: var(--muted); font-weight: 500; }
+  .task .meta { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .task .meta b { font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; }
+  .task.done .meta b { color: var(--muted); }
+  .bell {
+    width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 12px; flex: none;
+    background: transparent; color: var(--muted); display: grid; place-items: center; box-shadow: none;
+  }
+  .bell svg { width: 20px; height: 20px; }
+  .bell.on { background: var(--brand-soft); color: var(--brand); }
+  .bell.on svg { filter: var(--glow-icon); }
+  .tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 8px; }
+
+  /* Sheet (edit dialog) */
+  .sheet-bg { position: fixed; inset: 0; background: rgba(10, 8, 30, .5); display: none; z-index: 20; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 21;
+    max-width: 560px; margin: 0 auto;
+    background: var(--card); border-radius: 20px 20px 0 0; padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+    transform: translateY(105%); transition: transform .25s ease; max-height: 90vh; overflow: auto;
+  }
+  .sheet.open { transform: none; }
+  .sheet-bg.open { display: block; }
+  .sheet h3 { margin: 0 0 14px; }
+
+  /* Incoming call screen */
+  #call {
+    position: fixed; inset: 0; z-index: 50; display: none;
+    background: var(--call-bg);
+    color: #fff; text-align: center;
+    flex-direction: column; justify-content: space-between;
+    padding: calc(48px + env(safe-area-inset-top)) 24px calc(48px + env(safe-area-inset-bottom));
+  }
+  #call.show { display: flex; }
+  #call .who { font-size: 15px; opacity: .8; letter-spacing: .08em; text-transform: uppercase; }
+  #call h2 { font-size: 30px; margin: 10px 0 6px; line-height: 1.15; word-break: break-word; }
+  #call .when { opacity: .85; }
+  .avatar {
+    width: 120px; height: 120px; border-radius: 50%; margin: 36px auto 0;
+    background: rgba(255,255,255,.14); display: grid; place-items: center; position: relative;
+    box-shadow: var(--call-glow);
+  }
+  #call h2 { text-shadow: 0 0 18px rgba(255,255,255,.4); }
+  .avatar svg { width: 54px; height: 54px; }
+  .avatar::before, .avatar::after {
+    content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid rgba(255,255,255,.5);
+    animation: pulse 1.8s ease-out infinite;
+  }
+  .avatar::after { animation-delay: .9s; }
+  @keyframes pulse { from { transform: scale(1); opacity: .9; } to { transform: scale(1.9); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .avatar::before, .avatar::after, .answer { animation: none !important; } }
+  .call-actions { display: flex; justify-content: space-around; align-items: flex-end; }
+  .call-btn { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 14px; }
+  .call-btn button { width: 72px; height: 72px; border-radius: 50%; padding: 0; display: grid; place-items: center; }
+  .call-btn button svg { width: 32px; height: 32px; }
+  .decline { background: var(--red); color: #fff; box-shadow: 0 0 18px rgba(229, 72, 77, .5); }
+  .answer { background: var(--green); color: #fff; box-shadow: 0 0 20px rgba(31, 184, 106, .6); animation: bounce 1.2s ease-in-out infinite; }
+  @keyframes bounce { 50% { transform: translateY(-6px); } }
+  .task-box { background: rgba(255,255,255,.14); border-radius: 18px; padding: 18px; text-align: left; margin-top: 24px; }
+  .task-box .lbl { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; opacity: .75; }
+  .task-box p { margin: 6px 0 0; font-size: 18px; white-space: pre-wrap; }
+  .answered-actions { display: grid; gap: 10px; }
+  .answered-actions button { background: #fff; color: #1d2a26; min-height: 52px; font-size: 17px; box-shadow: var(--call-glow); }
+  .answered-actions button.alt { background: rgba(255,255,255,.14); color: #fff; box-shadow: none; }
+  /* First-open setup */
+  #welcome { position: fixed; inset: 0; z-index: 40; background: var(--bg); overflow: auto; display: none; }
+  #welcome.show { display: block; }
+  .wz { max-width: 480px; margin: 0 auto; padding: calc(28px + env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom)); }
+  .wz-dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 28px; }
+  .wz-dots i { width: 8px; height: 8px; border-radius: 4px; background: var(--line); transition: width .2s; }
+  .wz-dots i.on { width: 22px; background: var(--done); box-shadow: var(--glow); }
+  .wz-step h2 { font-size: 24px; margin: 0 0 8px; letter-spacing: -.01em; text-shadow: var(--text-glow); }
+  .wz-step .sub { color: var(--muted); margin: 0 0 18px; }
+  .wz-logo { width: 72px; height: 72px; border-radius: 18px; box-shadow: var(--glow); display: block; margin: 8px 0 22px; }
+  .wz-list { padding: 0; margin: 0 0 24px; list-style: none; display: grid; gap: 10px; }
+  .wz-list li { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .wz-list li b { color: var(--brand); }
+  .wz-steps { margin: 0 0 20px; padding-left: 22px; display: grid; gap: 10px; }
+  .wz-steps a { color: var(--brand); }
+  .wz-actions { display: grid; gap: 8px; margin-top: 8px; }
+  .wz-actions button { min-height: 50px; font-size: 17px; }
+  .copy-row { display: flex; gap: 8px; margin-top: 6px; }
+  .copy-row input { font-size: 14px; }
+  .copy-row button { flex: none; }
+  .say { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-style: italic; margin-top: 6px; }
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60;
+    background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px;
+    opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px);
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="icons/icon-192.png" alt="">
+    <div>
+      <h1>My Tasks</h1>
+      <p id="todayLabel"></p>
+    </div>
+    <button class="theme-btn g" id="themeBtn" aria-label="Switch to night mode"></button>
+  </header>
+
+  <div id="setupNotice" class="notice" hidden></div>
+
+  <!-- Write a task -->
+  <form class="card" id="quickAdd" autocomplete="off">
+    <input id="qaTitle" class="qa-title" placeholder="Write a task… e.g. Call the dentist" maxlength="120" aria-label="Task">
+    <div class="qa-row">
+      <input id="qaDate" type="date" aria-label="Day">
+      <input id="qaTime" type="time" aria-label="Time (optional)">
+      <button type="submit" aria-label="Add task">+</button>
+    </div>
+    <div class="qa-foot">
+      <span>Add a time to get a call</span>
+      <span class="status" id="qaDest"></span>
+    </div>
+  </form>
+
+  <!-- Task list -->
+  <section class="card">
+    <div class="row between">
+      <div>
+        <h2>To-do</h2>
+        <span class="status" id="progressText"></span>
+      </div>
+      <div class="row">
+        <span class="status"><span id="gDot" class="dot"></span><span id="gShort">Offline</span></span>
+        <button class="ghost" id="connectBtn">Sync</button>
+      </div>
+    </div>
+    <div class="progress"><i id="progressBar" style="width:0"></i></div>
+    <div id="list"></div>
+    <p class="sub" id="lastSync" style="margin:8px 0 0"></p>
+  </section>
+
+  <!-- Before calls work -->
+  <section class="card" id="readyCard">
+    <h2>Make sure calls can reach you</h2>
+    <p class="sub">Tap each one once.</p>
+    <div class="checks">
+      <div class="toggle">
+        <div>Notifications<small id="notifState">Shows the call even when you're in another app</small></div>
+        <button class="ghost" id="notifBtn">Allow</button>
+      </div>
+      <div class="toggle">
+        <div>Ringing sound<small>Phones block sound until you tap once</small></div>
+        <button class="ghost" id="soundBtn">Test ring</button>
+      </div>
+      <div class="toggle">
+        <div>Try a call<small>Rings in 10 seconds</small></div>
+        <button class="ghost" id="testBtn">Test call</button>
+      </div>
+      <div class="toggle">
+        <div>Keep screen awake<small>Most reliable: leave RingMe open on the charger</small></div>
+        <label class="switch"><input type="checkbox" id="wakeToggle"><i></i></label>
+      </div>
+    </div>
+  </section>
+
+  <!-- Settings -->
+  <section class="card">
+    <details>
+      <summary>Settings</summary>
+      <label class="field"><span>Look</span>
+        <select id="themeSel">
+          <option value="auto">Match my phone (day / night)</option>
+          <option value="light">Always day: Nordic earth</option>
+          <option value="dark">Always night: Midnight glow</option>
+        </select>
+      </label>
+      <div id="calPicker" class="checks" style="margin-bottom:14px" hidden></div>
+      <label class="field"><span>Call me</span>
+        <select id="leadSel">
+          <option value="0">When the task starts</option>
+          <option value="5">5 minutes before</option>
+          <option value="10">10 minutes before</option>
+          <option value="15">15 minutes before</option>
+          <option value="30">30 minutes before</option>
+          <option value="60">1 hour before</option>
+        </select>
+      </label>
+      <div class="checks" style="margin-bottom:12px">
+        <div class="toggle"><div>Call me for every calendar event<small>Turn off to pick them with the 🔔 button</small></div>
+          <label class="switch"><input type="checkbox" id="callAllToggle"><i></i></label></div>
+        <div class="toggle"><div>Read the task out loud<small>Uses your phone's built-in voice</small></div>
+          <label class="switch"><input type="checkbox" id="speakToggle"><i></i></label></div>
+      </div>
+      <label class="field"><span>Snooze length</span>
+        <select id="snoozeSel">
+          <option value="5">5 minutes</option>
+          <option value="10">10 minutes</option>
+          <option value="15">15 minutes</option>
+        </select>
+      </label>
+      <label class="field"><span>Google OAuth Client ID (see SETUP.md)</span>
+        <input id="clientIdInput" placeholder="1234-abc.apps.googleusercontent.com" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="row">
+        <button class="ghost" id="saveClientBtn">Save Client ID</button>
+        <button class="plain" id="disconnectBtn">Disconnect Google</button>
+      </div>
+      <button class="ghost" id="setupAgainBtn" style="margin-top:12px">Show setup steps again</button>
+    </details>
+  </section>
+</div>
+
+<!-- Edit sheet -->
+<div class="sheet-bg" id="sheetBg"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <h3 id="sheetTitle">Edit task</h3>
+  <label class="field"><span>What to do</span><input id="fTitle" maxlength="120"></label>
+  <label class="field"><span>When</span><input id="fWhen" type="datetime-local"></label>
+  <p class="sub" id="fFromGoogle" hidden>Change the name or time in Google Calendar. It updates here on the next sync.</p>
+  <label class="field"><span>Message on the call (optional)</span>
+    <textarea id="fMsg" placeholder="e.g. Take your blue pill with water, then text Mom."></textarea></label>
+  <div class="card" style="margin-bottom:12px">
+    <h2>Voice message</h2>
+    <p class="sub">Let someone else record what you have to do. It plays when you answer.</p>
+    <div class="row">
+      <button class="ghost" id="recBtn">● Record</button>
+      <button class="ghost" id="playBtn" hidden>▶ Play</button>
+      <button class="plain" id="delVoiceBtn" hidden>Remove</button>
+      <span class="status" id="recState"></span>
+    </div>
+  </div>
+  <div class="toggle" style="margin-bottom:16px"><div>Call me for this</div>
+    <label class="switch"><input type="checkbox" id="fEnabled"><i></i></label></div>
+  <div class="row between">
+    <button class="plain" id="deleteBtn">Delete</button>
+    <div class="row">
+      <button class="ghost" id="cancelBtn">Cancel</button>
+      <button id="saveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Incoming call -->
+<div id="call" role="alertdialog" aria-labelledby="callTitle">
+  <div>
+    <div class="who" id="callWho">RingMe is calling…</div>
+    <h2 id="callTitle"></h2>
+    <div class="when" id="callWhen"></div>
+    <div class="avatar" id="callAvatar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+    </div>
+    <div class="task-box" id="taskBox" hidden>
+      <div class="lbl">What you have to do</div>
+      <p id="taskText"></p>
+    </div>
+  </div>
+  <div class="call-actions" id="ringActions">
+    <div class="call-btn">
+      <button class="decline" id="declineBtn" aria-label="Snooze">
+        <svg viewBox="0 0 24 24" fill="#fff"><path d="M12 9c-1.6 0-3.2.25-4.7.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.996.996 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.780 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28a11.270 11.270 0 0 0-2.67-1.85.996.996 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>
+      </button>
+      <span>Snooze</span>
+    </div>
+    <div class="call-btn">
+      <button class="answer" id="answerBtn" aria-label="Answer">
+        <svg viewBox="0 0 24 24" fill="#fff"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1A17 17 0 0 1 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1z"/></svg>
+      </button>
+      <span>Answer</span>
+    </div>
+  </div>
+  <div class="answered-actions" id="answeredActions" hidden>
+    <button id="doneBtn">✓ Done, tick it off</button>
+    <button class="alt" id="replayBtn">Say it again</button>
+    <button class="alt" id="snooze2Btn">Remind me later</button>
+  </div>
+</div>
+
+<!-- First-open setup -->
+<div id="welcome" role="dialog" aria-modal="true" aria-label="Set up RingMe">
+  <div class="wz">
+    <div class="wz-dots" id="wzDots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+    <section class="wz-step">
+      <img src="icons/icon-192.png" class="wz-logo" alt="">
+      <h2>Welcome to RingMe</h2>
+      <p class="sub">Your to-do list and Google Calendar in one place, plus a phone call when it's time to do something.</p>
+      <ul class="wz-list">
+        <li><span>✍️</span><span>Write a task and it goes <b>straight into Google Calendar</b>.</span></li>
+        <li><span>📅</span><span>Your calendar events show up here as tasks.</span></li>
+        <li><span>📞</span><span>When it's time, your phone <b>rings</b> and tells you what to do.</span></li>
+      </ul>
+      <div class="wz-actions"><button data-next>Get started</button></div>
+    </section>
+
+    <section class="wz-step" hidden>
+      <h2>Connect Google Calendar</h2>
+      <p class="sub">RingMe asks Google for permission to <b>see your events</b> and <b>add the tasks you write</b>. You only do this once.</p>
+      <label class="field"><span>Your Google Client ID</span>
+        <input id="wzClientId" placeholder="1234-abc.apps.googleusercontent.com" autocomplete="off" spellcheck="false">
+      </label>
+      <details class="card">
+        <summary>How do I get a Client ID? (free, about 10 minutes)</summary>
+        <ol class="wz-steps">
+          <li>Open <a href="https://console.cloud.google.com" target="_blank" rel="noopener">console.cloud.google.com</a> and sign in with your Google account. No credit card is needed.</li>
+          <li>At the top, make a <b>New project</b> called <b>RingMe</b>.</li>
+          <li>Go to <b>APIs &amp; Services → Library</b>, search <b>Google Calendar API</b>, and tap <b>Enable</b>.</li>
+          <li>Go to <b>OAuth consent screen</b>: name it RingMe, choose <b>External</b>, and add your own Gmail under <b>Test users</b>.</li>
+          <li>Go to <b>Credentials → Create credentials → OAuth client ID</b> and choose <b>Web application</b>.</li>
+          <li>Under <b>Authorized JavaScript origins</b>, add this address:
+            <div class="copy-row"><input readonly id="wzOrigin" aria-label="Address to add"><button class="ghost" type="button" id="wzCopy">Copy</button></div>
+          </li>
+          <li>Tap <b>Create</b>, copy the Client ID, and paste it in the box above.</li>
+        </ol>
+      </details>
+      <p class="sub" id="wzConnectState" role="status"></p>
+      <div class="wz-actions">
+        <button id="wzConnect">Connect Google Calendar</button>
+        <button class="plain" data-next>Skip for now</button>
+      </div>
+    </section>
+
+    <section class="wz-step" hidden>
+      <h2>Let RingMe call you</h2>
+      <p class="sub">So your phone can ring and show the task, even when you're in another app.</p>
+      <div class="checks card">
+        <div class="toggle"><div>Notifications<small>Shows the call over other apps</small></div><button class="ghost" id="wzNotif">Allow</button></div>
+        <div class="toggle"><div>Ringing sound<small>Tap once so your phone allows it</small></div><button class="ghost" id="wzRing">Test ring</button></div>
+      </div>
+      <div class="wz-actions"><button data-next>Next</button></div>
+    </section>
+
+    <section class="wz-step" hidden>
+      <h2>Bonus: add tasks by talking to Claude</h2>
+      <p class="sub">Optional. If Claude is connected to your Google Calendar, anything you ask Claude to schedule lands in your calendar, and RingMe picks it up and calls you.</p>
+      <ol class="wz-steps">
+        <li>Install the free <b>Claude</b> app (Play Store or App Store) and sign in.</li>
+        <li>In Claude, open <b>Settings → Connectors</b>, find <b>Google Calendar</b>, and tap <b>Connect</b>. Use the same Google account as RingMe. If your phone app doesn't show it, do this once at <b>claude.ai</b> on a computer.</li>
+        <li>In a chat, say something like:
+          <div class="say">"Add 'Take vitamins' to my calendar today at 6 pm."</div>
+        </li>
+        <li>Open RingMe and tap <b>Sync</b>. The task shows up, and RingMe calls you at 6 pm.</li>
+      </ol>
+      <div class="wz-actions"><button data-finish>Start using RingMe</button></div>
+    </section>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- storage ----------
+  const LS = {
+    get(k, d) { try { const v = localStorage.getItem('ringme.' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('ringme.' + k, JSON.stringify(v)); } catch {} }
+  };
+
+  const state = {
+    settings: Object.assign({ clientId: '', lead: 0, callAll: true, speak: true, snooze: 5, calendars: ['primary'], wake: false, theme: 'auto', onboarded: false }, LS.get('settings', {})),
+    googleEvents: LS.get('googleEvents', []),   // [{id, gid, calendar, title, description, start, allDay, mine}]
+    manual: LS.get('manual', []),               // [{id, title, description, start, allDay}]
+    prefs: LS.get('prefs', {}),                 // id -> {enabled, message, hasVoice, done}
+    fired: LS.get('fired', {}),                 // "id|start" -> timestamp
+    snoozes: LS.get('snoozes', []),             // [{id, at}]
+    token: LS.get('token', null),               // {access_token, expires, scope}
+    lastSync: LS.get('lastSync', 0),
+    calendarList: LS.get('calendarList', [])
+  };
+  const save = (...keys) => keys.forEach(k => LS.set(k, state[k]));
+
+  const $ = id => document.getElementById(id);
+  const toast = (msg) => {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600);
+  };
+
+  // ---------- voice notes (IndexedDB) ----------
+  const voiceDB = (() => {
+    let dbp;
+    const open = () => dbp || (dbp = new Promise((res, rej) => {
+      const r = indexedDB.open('ringme', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('voices');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    }));
+    const tx = async (mode, fn) => {
+      const db = await open();
+      return new Promise((res, rej) => {
+        const t = db.transaction('voices', mode);
+        const req = fn(t.objectStore('voices'));
+        t.oncomplete = () => res(req && req.result);
+        t.onerror = () => rej(t.error);
+      });
+    };
+    return {
+      get: id => tx('readonly', s => s.get(id)).catch(() => null),
+      put: (id, blob) => tx('readwrite', s => s.put(blob, id)),
+      del: id => tx('readwrite', s => s.delete(id))
+    };
+  })();
+
+  // ---------- dates ----------
+  const pad = n => String(n).padStart(2, '0');
+  const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const parseYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+  const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+  const fmtTime = d => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const fmtDay = d => {
+    const date = new Date(d), today = new Date(), tm = new Date(); tm.setDate(today.getDate() + 1);
+    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === tm.toDateString()) return 'Tomorrow';
+    return date.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+  };
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // ---------- tasks ----------
+  const allEvents = () => {
+    const list = [
+      ...state.googleEvents.map(e => ({ ...e, source: 'google' })),
+      ...state.manual.map(e => ({ ...e, source: 'manual' }))
+    ];
+    return list.map(e => {
+      const p = state.prefs[e.id] || {};
+      const enabled = e.allDay ? false : p.enabled != null ? p.enabled : (e.source === 'manual' || e.mine ? true : state.settings.callAll);
+      return { ...e, enabled, done: !!p.done, message: p.message || '', hasVoice: !!p.hasVoice };
+    }).sort((a, b) => new Date(a.start) - new Date(b.start) || (b.allDay - a.allDay));
+  };
+  const findEvent = id => allEvents().find(e => e.id === id);
+  const triggerTime = e => new Date(e.start).getTime() - state.settings.lead * 60000;
+  const fireKey = e => e.id + '|' + e.start;
+  const setPref = (id, patch) => { state.prefs[id] = Object.assign({}, state.prefs[id], patch); save('prefs'); };
+
+  const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  const ICON_BELL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
+  const ICON_BELL_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.7 21a2 2 0 0 1-3.4 0"/><path d="M18.6 13A17.9 17.9 0 0 1 18 8"/><path d="M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.3-5"/><path d="M2 2l20 20"/></svg>';
+
+  function render() {
+    $('todayLabel').textContent = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    const from = startOfToday().getTime();
+    const events = allEvents().filter(e => new Date(e.start).getTime() >= from && !e.id.startsWith('m:test'));
+
+    // group by day, undone first
+    const groups = new Map();
+    for (const e of events) {
+      const key = new Date(e.start).toDateString();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(e);
+    }
+    const list = $('list');
+    if (!events.length) {
+      list.innerHTML = '<div class="empty">Nothing to do yet 🎉<br>Write a task above, or tap Sync to pull in Google Calendar.</div>';
+    } else {
+      let html = '';
+      for (const [, items] of groups) {
+        items.sort((a, b) => a.done - b.done);
+        const left = items.filter(i => !i.done).length;
+        html += `<div class="day"><span>${esc(fmtDay(items[0].start))}</span><span>${left ? left + ' left' : 'All done ✓'}</span></div>`;
+        for (const e of items) {
+          const time = e.allDay ? 'All day' : fmtTime(e.start);
+          const tags = [
+            e.source === 'google' ? '<span class="tag">Calendar</span>' : '',
+            e.pendingGoogle ? '<span class="tag">⏳ Waiting for Google</span>' : '',
+            e.hasVoice ? '<span class="tag">🎙 Voice</span>' : ''
+          ].join('');
+          const bell = e.allDay || e.done ? '' :
+            `<button class="bell ${e.enabled ? 'on' : ''}" data-bell="${esc(e.id)}" aria-label="${e.enabled ? 'Call is on' : 'Call is off'} for ${esc(e.title)}" aria-pressed="${e.enabled}">${e.enabled ? ICON_BELL : ICON_BELL_OFF}</button>`;
+          html += `<div class="task ${e.done ? 'done' : ''}">
+            <button class="check" data-done="${esc(e.id)}" aria-label="Mark ${esc(e.title)} as ${e.done ? 'not done' : 'done'}" aria-pressed="${e.done}">${ICON_CHECK}</button>
+            <div class="info" data-edit="${esc(e.id)}">
+              <div class="title">${esc(e.title)}</div>
+              <div class="meta"><b>${esc(time)}</b>${tags}</div>
+            </div>
+            ${bell}
+          </div>`;
+        }
+      }
+      list.innerHTML = html;
+    }
+
+    // today's progress
+    const today = events.filter(e => new Date(e.start).toDateString() === new Date().toDateString());
+    const done = today.filter(e => e.done).length;
+    $('progressText').textContent = today.length ? `${done} of ${today.length} done today` : 'Nothing due today';
+    $('progressBar').style.width = today.length ? (done / today.length * 100) + '%' : '0';
+
+    // Google status
+    const connected = !!state.settings.clientId && tokenValid();
+    $('gDot').classList.toggle('on', connected);
+    $('gShort').textContent = connected ? 'Synced' : state.lastSync ? 'Tap Sync' : 'Offline';
+    $('connectBtn').textContent = state.lastSync ? 'Sync' : 'Connect Google';
+    $('lastSync').textContent = state.lastSync ? 'Last synced with Google ' + new Date(state.lastSync).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '';
+    const waiting = state.manual.filter(m => m.pendingGoogle).length;
+    $('qaDest').innerHTML = !state.settings.clientId ? '<span class="dot"></span>Only on this phone'
+      : waiting ? `<span class="dot"></span>${waiting} waiting for Google`
+      : '<span class="dot on"></span>Saves to Google Calendar';
+    renderCalendars();
+
+    // permissions
+    const perm = ('Notification' in window) ? Notification.permission : 'unsupported';
+    $('notifBtn').textContent = perm === 'granted' ? 'On ✓' : perm === 'denied' ? 'Blocked' : 'Allow';
+    $('notifBtn').disabled = perm === 'granted' || perm === 'unsupported';
+    if (perm === 'denied') $('notifState').textContent = 'Blocked — allow it in Chrome site settings';
+
+    const notice = $('setupNotice');
+    if (!state.settings.clientId) {
+      notice.hidden = false;
+      notice.innerHTML = '<div class="row between"><span>Your tasks only save on this phone for now.</span><button data-connect>Connect Google Calendar</button></div>';
+    } else notice.hidden = true;
+  }
+
+  function renderCalendars() {
+    const box = $('calPicker');
+    if (!state.calendarList.length) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = '<div class="sub" style="margin:0">Calendars to show</div>' + state.calendarList.map(c => `
+      <div class="toggle"><div>${esc(c.summary)}</div>
+      <label class="switch"><input type="checkbox" data-cal="${esc(c.id)}" ${calSelected(c) ? 'checked' : ''}><i></i></label></div>`).join('');
+  }
+  const calSelected = c => state.settings.calendars.includes(c.id) || (c.primary && state.settings.calendars.includes('primary'));
+
+  // ---------- Google Calendar ----------
+  // calendar.events lets us read events and write the tasks you add; calendar.readonly lists your calendars.
+  const SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.readonly'];
+  const tokenValid = () => state.token && state.token.expires > Date.now() + 60000
+    && SCOPES.every(s => (state.token.scope || '').includes(s));
+
+  function loadGsi() {
+    return new Promise((res, rej) => {
+      if (window.google && google.accounts && google.accounts.oauth2) return res();
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = res; s.onerror = () => rej(new Error('Could not load Google sign-in. Are you online?'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function getToken() {
+    if (tokenValid()) return state.token.access_token;
+    if (!state.settings.clientId) throw new Error('Add your Google Client ID in Settings first.');
+    await loadGsi();
+    const needsConsent = !state.token || !SCOPES.every(s => (state.token.scope || '').includes(s));
+    return new Promise((res, rej) => {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: state.settings.clientId,
+        scope: SCOPES.join(' '),
+        callback: (r) => {
+          if (r.error) return rej(new Error(r.error_description || r.error));
+          if (!google.accounts.oauth2.hasGrantedAllScopes(r, ...SCOPES)) {
+            return rej(new Error('Please tick both calendar boxes so tasks can be saved to Google.'));
+          }
+          state.token = { access_token: r.access_token, expires: Date.now() + (r.expires_in || 3600) * 1000, scope: r.scope };
+          save('token');
+          res(r.access_token);
+        },
+        error_callback: (err) => rej(new Error(err && err.message || 'Sign-in was closed'))
+      });
+      client.requestAccessToken({ prompt: needsConsent ? 'consent' : '' });
+    });
+  }
+
+  async function gfetch(path, opts = {}) {
+    const token = await getToken();
+    const r = await fetch('https://www.googleapis.com/calendar/v3/' + path, {
+      method: opts.method || 'GET',
+      headers: Object.assign({ Authorization: 'Bearer ' + token }, opts.body ? { 'Content-Type': 'application/json' } : {}),
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    });
+    if (r.status === 401) { state.token = null; save('token'); throw new Error('Google session expired — tap Sync again.'); }
+    if (!r.ok) throw new Error('Google Calendar error ' + r.status);
+    return r.status === 204 ? null : r.json();
+  }
+
+  const DONE_MARK = '✓ ';
+  function fromGoogle(ev, calendarId) {
+    const allDay = !ev.start.dateTime;
+    const mine = !!(ev.extendedProperties && ev.extendedProperties.private && ev.extendedProperties.private.ringme);
+    let title = ev.summary || '(No title)';
+    const id = 'g:' + ev.id;
+    // Tasks made in RingMe carry their done state in Google as a "✓ " in front of the title.
+    // If you ticked it here while signed out, this phone wins and Google is fixed after the sync.
+    let googleDone = false;
+    if (mine) {
+      googleDone = title.startsWith(DONE_MARK);
+      if (googleDone) title = title.slice(DONE_MARK.length);
+      const p = state.prefs[id];
+      if (!p || p.done == null) state.prefs[id] = Object.assign({}, p, { done: googleDone });
+    }
+    return {
+      id, gid: ev.id, calendar: calendarId, mine, allDay, title, googleDone,
+      description: (ev.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400),
+      start: allDay ? parseYmd(ev.start.date).toISOString() : new Date(ev.start.dateTime).toISOString()
+    };
+  }
+
+  async function syncGoogle() {
+    const btn = $('connectBtn');
+    btn.disabled = true; btn.textContent = 'Syncing…';
+    let ok = false;
+    try {
+      const uploaded = await uploadPending();
+      const cl = await gfetch('users/me/calendarList?minAccessRole=reader');
+      state.calendarList = (cl.items || []).map(c => ({ id: c.id, summary: c.summaryOverride || c.summary, primary: !!c.primary }));
+      save('calendarList');
+      const ids = state.calendarList.filter(calSelected).map(c => c.id);
+      const timeMin = startOfToday().toISOString();
+      const timeMax = new Date(Date.now() + 14 * 86400000).toISOString();
+      const out = [];
+      for (const id of ids) {
+        const data = await gfetch(`calendars/${encodeURIComponent(id)}/events?singleEvents=true&orderBy=startTime&maxResults=250&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`);
+        for (const ev of data.items || []) {
+          if (ev.status === 'cancelled' || !ev.start) continue;
+          out.push(fromGoogle(ev, id));
+        }
+      }
+      state.googleEvents = out;
+      state.lastSync = Date.now();
+      save('googleEvents', 'lastSync', 'prefs');
+      for (const e of allEvents()) {
+        if (e.source === 'google' && e.mine && e.done !== e.googleDone) pushDoneToGoogle(e, e.done);
+      }
+      toast(uploaded
+        ? `Uploaded ${uploaded} waiting task${uploaded === 1 ? '' : 's'} to Google Calendar`
+        : `Synced ${out.length} item${out.length === 1 ? '' : 's'} from Google`);
+      ok = true;
+    } catch (e) {
+      toast(e.message);
+    } finally {
+      btn.disabled = false;
+      render();
+    }
+    return ok;
+  }
+
+  // Tasks written while offline or signed out wait on this phone, then go up on the next sync.
+  async function uploadPending() {
+    const waiting = state.manual.filter(m => m.pendingGoogle);
+    for (const m of waiting) {
+      const d = new Date(m.start);
+      const task = await createGoogleTask(m.title, ymd(d), m.allDay ? '' : `${pad(d.getHours())}:${pad(d.getMinutes())}`);
+      // carry over the note, voice message, call and done settings to the Google copy
+      if (state.prefs[m.id]) { state.prefs[task.id] = Object.assign({}, state.prefs[m.id], state.prefs[task.id]); delete state.prefs[m.id]; }
+      const blob = await voiceDB.get(m.id);
+      if (blob) { await voiceDB.put(task.id, blob); await voiceDB.del(m.id); }
+      state.manual = state.manual.filter(x => x.id !== m.id);
+      save('manual', 'prefs');
+    }
+    return waiting.length;
+  }
+
+  async function createGoogleTask(title, date, time) {
+    const body = { summary: title, extendedProperties: { private: { ringme: '1' } } };
+    if (time) {
+      const start = new Date(`${date}T${time}`);
+      const end = new Date(start.getTime() + 30 * 60000);
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      body.start = { dateTime: start.toISOString(), timeZone: tz };
+      body.end = { dateTime: end.toISOString(), timeZone: tz };
+    } else {
+      const next = parseYmd(date); next.setDate(next.getDate() + 1);
+      body.start = { date };
+      body.end = { date: ymd(next) };
+    }
+    const ev = await gfetch('calendars/primary/events', { method: 'POST', body });
+    const task = fromGoogle(ev, 'primary');
+    state.googleEvents.push(task);
+    save('googleEvents', 'prefs');
+    return task;
+  }
+
+  // Keep the "✓ " in Google Calendar in step for tasks that RingMe created.
+  async function pushDoneToGoogle(e, done) {
+    if (e.source !== 'google' || !e.mine) return;
+    try {
+      await gfetch(`calendars/${encodeURIComponent(e.calendar)}/events/${encodeURIComponent(e.gid)}`, {
+        method: 'PATCH', body: { summary: (done ? DONE_MARK : '') + e.title }
+      });
+      const g = state.googleEvents.find(x => x.id === e.id);
+      if (g) { g.googleDone = done; save('googleEvents'); }
+    } catch (err) {
+      toast('Saved here. Google will update next time you sync.');
+    }
+  }
+
+  function setDone(id, done) {
+    const e = findEvent(id);
+    if (!e) return;
+    setPref(id, { done });
+    if (done) { state.snoozes = state.snoozes.filter(s => s.id !== id); save('snoozes'); }
+    render();
+    if (tokenValid()) pushDoneToGoogle(e, done);
+  }
+
+  // Quiet background refresh while we still hold a valid token (no popup).
+  setInterval(() => { if (tokenValid() && !document.hidden) syncGoogle(); }, 15 * 60000);
+
+  // ---------- sound, vibration, voice ----------
+  let audioCtx = null, ringTimer = null, vibeTimer = null, currentAudio = null;
+  function unlockAudio() {
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  document.addEventListener('pointerdown', unlockAudio, { passive: true });
+
+  function ringOnce() {
+    if (!audioCtx) return;
+    const t0 = audioCtx.currentTime;
+    // Classic two-tone phone ring: two short bursts
+    [0, 0.45].forEach(offset => {
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0, t0 + offset);
+      g.gain.linearRampToValueAtTime(0.25, t0 + offset + 0.02);
+      g.gain.setValueAtTime(0.25, t0 + offset + 0.35);
+      g.gain.linearRampToValueAtTime(0, t0 + offset + 0.4);
+      g.connect(audioCtx.destination);
+      [440, 480].forEach(f => {
+        const o = audioCtx.createOscillator();
+        o.frequency.value = f; o.type = 'sine';
+        o.connect(g); o.start(t0 + offset); o.stop(t0 + offset + 0.42);
+      });
+    });
+  }
+  function startRinging() {
+    stopRinging();
+    unlockAudio();
+    ringOnce();
+    ringTimer = setInterval(ringOnce, 2500);
+    // Chrome only allows vibration after you've tapped the page once
+    const canVibrate = navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive);
+    if (canVibrate) {
+      navigator.vibrate([800, 400, 800]);
+      vibeTimer = setInterval(() => navigator.vibrate([800, 400, 800]), 2500);
+    }
+  }
+  function stopRinging() {
+    clearInterval(ringTimer); clearInterval(vibeTimer); ringTimer = vibeTimer = null;
+    if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(0);
+  }
+  function stopVoice() {
+    if (window.speechSynthesis) speechSynthesis.cancel();
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  }
+
+  function taskText(e) {
+    if (e.message) return e.message;
+    return e.description ? `${e.title}\n\n${e.description}` : e.title;
+  }
+
+  async function deliverMessage(e) {
+    stopVoice();
+    if (e.hasVoice) {
+      const blob = await voiceDB.get(e.id);
+      if (blob) {
+        currentAudio = new Audio(URL.createObjectURL(blob));
+        currentAudio.play().catch(() => {});
+        return;
+      }
+    }
+    if (state.settings.speak && window.speechSynthesis) {
+      const when = new Date(e.start).getTime() > Date.now() + 60000 ? `in ${Math.round((new Date(e.start) - Date.now()) / 60000)} minutes` : 'now';
+      const text = e.message
+        ? `Hi! This is your reminder. ${e.message}`
+        : `Hi! It's time for ${e.title}, ${when}.${e.description ? ' Here are the details: ' + e.description : ''}`;
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 0.95;
+      speechSynthesis.speak(u);
+    }
+  }
+
+  // ---------- incoming call ----------
+  let activeCall = null; const queue = [];
+
+  function showCall(e) {
+    if (activeCall) { if (!queue.some(q => q.id === e.id) && activeCall.id !== e.id) queue.push(e); return; }
+    activeCall = e;
+    $('callTitle').textContent = e.title;
+    const mins = Math.round((new Date(e.start) - Date.now()) / 60000);
+    $('callWhen').textContent = mins > 1 ? `Starts at ${fmtTime(e.start)} (in ${mins} min)` : `Now · ${fmtTime(e.start)}`;
+    $('callWho').textContent = e.hasVoice ? 'Incoming voice message…' : 'RingMe is calling…';
+    $('taskBox').hidden = true;
+    $('callAvatar').hidden = false;
+    $('ringActions').hidden = false;
+    $('answeredActions').hidden = true;
+    $('call').classList.add('show');
+    document.title = '📞 ' + e.title;
+    startRinging();
+    notify(e);
+  }
+
+  function answerCall() {
+    if (!activeCall) return;
+    stopRinging();
+    closeNotification(activeCall.id);
+    $('callWho').textContent = 'On the call';
+    $('callAvatar').hidden = true;
+    $('taskText').textContent = taskText(activeCall);
+    $('taskBox').hidden = false;
+    $('ringActions').hidden = true;
+    $('answeredActions').hidden = false;
+    deliverMessage(activeCall);
+  }
+
+  function endCall(snooze) {
+    if (!activeCall) return;
+    stopRinging(); stopVoice();
+    closeNotification(activeCall.id);
+    const id = activeCall.id;
+    if (snooze) {
+      state.snoozes = state.snoozes.filter(s => s.id !== id);
+      state.snoozes.push({ id, at: Date.now() + state.settings.snooze * 60000 });
+      save('snoozes');
+      toast(`I'll call again in ${state.settings.snooze} min`);
+    } else if (id.startsWith('m:test')) {
+      state.manual = state.manual.filter(m => m.id !== id);
+      delete state.prefs[id];
+      save('manual', 'prefs');
+      toast('Test worked!');
+    } else {
+      setDone(id, true);
+      toast('Nice! Ticked off your list.');
+    }
+    activeCall = null;
+    $('call').classList.remove('show');
+    document.title = 'RingMe';
+    render();
+    const next = queue.shift();
+    if (next) setTimeout(() => showCall(next), 600);
+  }
+
+  $('answerBtn').onclick = answerCall;
+  $('declineBtn').onclick = () => endCall(true);
+  $('snooze2Btn').onclick = () => endCall(true);
+  $('doneBtn').onclick = () => endCall(false);
+  $('replayBtn').onclick = () => activeCall && deliverMessage(activeCall);
+
+  // ---------- system notifications (service worker) ----------
+  let swReg = null;
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').then(r => { swReg = r; }).catch(() => {});
+    navigator.serviceWorker.addEventListener('message', ev => {
+      const d = ev.data || {};
+      if (d.type === 'call-action') handleNotificationAction(d.id, d.action);
+    });
+  }
+
+  function notify(e) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const opts = {
+      body: (e.message || e.description || 'Tap to answer').slice(0, 140),
+      tag: 'call-' + e.id,
+      renotify: true,
+      requireInteraction: true,
+      vibrate: [800, 400, 800, 400, 800],
+      icon: 'icons/icon-192.png',
+      badge: 'icons/icon-192.png',
+      data: { id: e.id },
+      actions: [{ action: 'answer', title: 'Answer' }, { action: 'snooze', title: 'Snooze' }]
+    };
+    const title = '📞 ' + e.title;
+    if (swReg && swReg.showNotification) swReg.showNotification(title, opts).catch(() => {});
+    else try { new Notification(title, opts); } catch {}
+  }
+  function closeNotification(id) {
+    if (!swReg || !swReg.getNotifications) return;
+    swReg.getNotifications({ tag: 'call-' + id }).then(ns => ns.forEach(n => n.close())).catch(() => {});
+  }
+  function handleNotificationAction(id, action) {
+    const e = findEvent(id);
+    if (!e) return;
+    if (!activeCall) showCall(e);
+    if (action === 'snooze') endCall(true);
+    else if (action === 'answer') answerCall();
+  }
+  // Opened from a notification while the app was closed
+  const params = new URLSearchParams(location.search);
+  if (params.get('call')) {
+    const id = params.get('call'), action = params.get('action') || '';
+    history.replaceState(null, '', location.pathname);
+    setTimeout(() => handleNotificationAction(id, action), 300);
+  }
+
+  $('notifBtn').onclick = async () => {
+    if (!('Notification' in window)) return toast('This browser has no notifications');
+    await Notification.requestPermission();
+    render();
+  };
+  $('soundBtn').onclick = () => { unlockAudio(); ringOnce(); if (navigator.vibrate) navigator.vibrate(300); };
+
+  // ---------- wake lock ----------
+  let wakeLock = null;
+  async function applyWake() {
+    try {
+      if (state.settings.wake && 'wakeLock' in navigator && !document.hidden) {
+        if (!wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); }
+      } else if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+    } catch { /* not allowed right now */ }
+  }
+  $('wakeToggle').checked = state.settings.wake;
+  $('wakeToggle').onchange = e => {
+    if (!('wakeLock' in navigator)) { toast('Keep-awake is not supported in this browser'); e.target.checked = false; return; }
+    state.settings.wake = e.target.checked; save('settings'); applyWake();
+  };
+  document.addEventListener('visibilitychange', () => { applyWake(); if (!document.hidden) { tick(); render(); } });
+
+  // ---------- scheduler ----------
+  const MISS_WINDOW = 15 * 60000; // still call if we were asleep up to 15 min late
+  function tick() {
+    const now = Date.now();
+    for (const e of allEvents()) {
+      if (!e.enabled || e.done || e.allDay) continue;
+      const t = triggerTime(e), key = fireKey(e);
+      if (now >= t && now - t < MISS_WINDOW && !state.fired[key]) {
+        state.fired[key] = now; save('fired');
+        showCall(e);
+      }
+    }
+    const due = state.snoozes.filter(s => s.at <= now);
+    if (due.length) {
+      state.snoozes = state.snoozes.filter(s => s.at > now); save('snoozes');
+      due.forEach(s => { const e = findEvent(s.id); if (e && !e.done) showCall(e); });
+    }
+    for (const k in state.fired) if (now - state.fired[k] > 3 * 86400000) delete state.fired[k];
+  }
+  setInterval(tick, 2000);
+  setInterval(render, 60000);
+
+  // ---------- writing a task ----------
+  $('qaDate').value = ymd(new Date());
+  $('quickAdd').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    unlockAudio();
+    const title = $('qaTitle').value.trim();
+    const date = $('qaDate').value || ymd(new Date());
+    const time = $('qaTime').value;
+    if (!title) { $('qaTitle').focus(); return toast('Write what you need to do'); }
+    const btn = ev.submitter || $('quickAdd').querySelector('button');
+    btn.disabled = true;
+    const linked = !!state.settings.clientId;
+    let saved = false;
+    try {
+      if (linked) {
+        try {
+          await createGoogleTask(title, date, time);
+          saved = true;
+          toast('Added to your list and Google Calendar ✓');
+        } catch (err) {
+          toast("Saved. It'll go to Google Calendar next time you sync.");
+        }
+      }
+      if (!saved) {
+        const start = time ? new Date(`${date}T${time}`) : parseYmd(date);
+        state.manual.push({
+          id: 'm:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+          title, description: '', start: start.toISOString(), allDay: !time,
+          pendingGoogle: linked
+        });
+        save('manual');
+        if (!linked) toast(time ? `Added. I'll call you at ${fmtTime(start)}.` : 'Added to your list');
+      }
+      $('qaTitle').value = ''; $('qaTime').value = '';
+      render(); tick();
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // ---------- list interactions ----------
+  $('list').addEventListener('click', ev => {
+    const check = ev.target.closest('[data-done]');
+    if (check) { const e = findEvent(check.dataset.done); if (e) setDone(e.id, !e.done); return; }
+    const bell = ev.target.closest('[data-bell]');
+    if (bell) {
+      const e = findEvent(bell.dataset.bell);
+      if (e) { setPref(e.id, { enabled: !e.enabled }); render(); toast(e.enabled ? 'No call for this one' : "I'll call you for this"); }
+      return;
+    }
+    const el = ev.target.closest('[data-edit]');
+    if (el) openSheet(el.dataset.edit);
+  });
+  $('calPicker').addEventListener('change', ev => {
+    const id = ev.target.dataset.cal; if (!id) return;
+    const cal = state.calendarList.find(c => c.id === id);
+    const sel = state.settings.calendars.filter(c => c !== id && !(cal && cal.primary && c === 'primary'));
+    if (ev.target.checked) sel.push(id);
+    state.settings.calendars = sel; save('settings');
+    syncGoogle();
+  });
+
+  // ---------- edit sheet ----------
+  let editingId = null, recorder = null, recChunks = [], pendingVoice = undefined; // undefined = unchanged, null = delete, Blob = new
+  const toLocalInput = d => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 16); };
+
+  function openSheet(id) {
+    const e = findEvent(id);
+    if (!e) return;
+    editingId = e.id;
+    pendingVoice = undefined;
+    const fromG = e.source === 'google';
+    $('sheetTitle').textContent = 'Edit task';
+    $('fTitle').value = e.title;
+    $('fWhen').value = e.allDay ? '' : toLocalInput(e.start);
+    $('fTitle').disabled = fromG; $('fWhen').disabled = fromG;
+    $('fFromGoogle').hidden = !fromG;
+    $('fMsg').value = e.message;
+    $('fEnabled').checked = e.enabled;
+    $('deleteBtn').hidden = fromG;
+    $('recState').textContent = '';
+    setVoiceUI(e.hasVoice);
+    $('sheet').classList.add('open'); $('sheetBg').classList.add('open');
+  }
+  function closeSheet() {
+    if (recorder && recorder.state === 'recording') recorder.stop();
+    stopVoice();
+    $('sheet').classList.remove('open'); $('sheetBg').classList.remove('open');
+  }
+  function setVoiceUI(has) {
+    $('playBtn').hidden = !has; $('delVoiceBtn').hidden = !has;
+    $('recBtn').textContent = has ? '● Re-record' : '● Record';
+  }
+  $('sheetBg').onclick = closeSheet;
+  $('cancelBtn').onclick = closeSheet;
+
+  $('recBtn').onclick = async () => {
+    if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recChunks = [];
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = ev => ev.data.size && recChunks.push(ev.data);
+      recorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        pendingVoice = new Blob(recChunks, { type: recorder.mimeType || 'audio/webm' });
+        $('recState').textContent = 'Recorded ✓';
+        setVoiceUI(true);
+      };
+      recorder.start();
+      $('recBtn').textContent = '■ Stop';
+      $('recState').textContent = 'Recording…';
+    } catch {
+      toast('Microphone not available');
+    }
+  };
+  $('playBtn').onclick = async () => {
+    stopVoice();
+    const blob = pendingVoice instanceof Blob ? pendingVoice : (editingId ? await voiceDB.get(editingId) : null);
+    if (blob) { currentAudio = new Audio(URL.createObjectURL(blob)); currentAudio.play().catch(() => {}); }
+  };
+  $('delVoiceBtn').onclick = () => { pendingVoice = null; setVoiceUI(false); $('recState').textContent = 'Removed'; };
+
+  $('saveBtn').onclick = async () => {
+    const e = findEvent(editingId);
+    if (!e) return closeSheet();
+    if (e.source === 'manual') {
+      const m = state.manual.find(x => x.id === e.id);
+      m.title = $('fTitle').value.trim() || m.title;
+      if ($('fWhen').value) { m.start = new Date($('fWhen').value).toISOString(); m.allDay = false; }
+    }
+    const prefs = { enabled: $('fEnabled').checked, message: $('fMsg').value.trim() };
+    if (pendingVoice instanceof Blob) { await voiceDB.put(e.id, pendingVoice); prefs.hasVoice = true; }
+    else if (pendingVoice === null) { await voiceDB.del(e.id); prefs.hasVoice = false; }
+    setPref(e.id, prefs);
+    save('manual');
+    closeSheet(); render(); tick();
+    toast('Saved');
+  };
+  $('deleteBtn').onclick = async () => {
+    if (!editingId) return;
+    state.manual = state.manual.filter(m => m.id !== editingId);
+    delete state.prefs[editingId];
+    await voiceDB.del(editingId);
+    save('manual', 'prefs');
+    closeSheet(); render();
+  };
+
+  $('testBtn').onclick = () => {
+    unlockAudio();
+    const id = 'm:test' + Date.now().toString(36);
+    const start = new Date(Date.now() + 10000).toISOString();
+    state.manual.push({ id, title: 'Test call', description: 'This is how RingMe will call you.', start });
+    state.prefs[id] = { enabled: true, message: '' };
+    // the test rings at its start time regardless of the "call me before" setting
+    state.snoozes.push({ id, at: Date.now() + 10000 });
+    state.fired[id + '|' + start] = Date.now();
+    save('manual', 'prefs', 'snoozes', 'fired');
+    toast('Calling you in 10 seconds…');
+  };
+
+  // ---------- first-open setup ----------
+  const wzSteps = [...document.querySelectorAll('.wz-step')];
+  let wzStep = 0;
+  function showWizard(step) {
+    wzStep = step || 0;
+    $('welcome').classList.add('show');
+    renderWizard();
+  }
+  function renderWizard() {
+    wzSteps.forEach((s, i) => { s.hidden = i !== wzStep; });
+    [...$('wzDots').children].forEach((d, i) => d.classList.toggle('on', i === wzStep));
+    $('wzOrigin').value = location.origin;
+    $('wzClientId').value = state.settings.clientId;
+    const perm = ('Notification' in window) ? Notification.permission : 'unsupported';
+    $('wzNotif').textContent = perm === 'granted' ? 'On ✓' : perm === 'denied' ? 'Blocked' : 'Allow';
+    $('wzNotif').disabled = perm !== 'default';
+    if (wzStep === 1 && tokenValid()) $('wzConnectState').textContent = 'Connected ✓';
+    if (wzStep === 1) loadGsi().catch(() => {}); // warm up so the Google popup opens straight away
+    $('welcome').scrollTop = 0;
+  }
+  function finishWizard() {
+    state.settings.onboarded = true; save('settings');
+    $('welcome').classList.remove('show');
+    render();
+  }
+  $('welcome').addEventListener('click', ev => {
+    if (ev.target.closest('[data-next]')) { wzStep = Math.min(wzStep + 1, wzSteps.length - 1); renderWizard(); }
+    if (ev.target.closest('[data-finish]')) finishWizard();
+  });
+  $('wzCopy').onclick = () => {
+    const done = () => toast('Copied');
+    if (navigator.clipboard) navigator.clipboard.writeText(location.origin).then(done, () => $('wzOrigin').select());
+    else { $('wzOrigin').select(); document.execCommand('copy'); done(); }
+  };
+  $('wzConnect').onclick = async () => {
+    const id = $('wzClientId').value.trim();
+    if (!/\.apps\.googleusercontent\.com$/.test(id)) {
+      $('wzConnectState').textContent = 'Paste your Client ID first. It ends in .apps.googleusercontent.com';
+      $('wzClientId').focus();
+      return;
+    }
+    state.settings.clientId = id; save('settings');
+    $('clientIdInput').value = id;
+    $('wzConnectState').textContent = 'Waiting for Google…';
+    if (await syncGoogle()) {
+      $('wzConnectState').textContent = 'Connected ✓ Your calendar is in RingMe.';
+      setTimeout(() => { wzStep = 2; renderWizard(); }, 900);
+    } else {
+      $('wzConnectState').textContent = "That didn't work. Check the Client ID and that the address above is in Authorized JavaScript origins, then try again.";
+    }
+  };
+  $('wzNotif').onclick = async () => {
+    if ('Notification' in window) await Notification.requestPermission();
+    renderWizard(); render();
+  };
+  $('wzRing').onclick = () => { unlockAudio(); ringOnce(); };
+  $('setupNotice').addEventListener('click', ev => { if (ev.target.closest('[data-connect]')) showWizard(1); });
+  $('setupAgainBtn').onclick = () => showWizard(0);
+
+  // ---------- day / night look ----------
+  const ICON_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+  const ICON_SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+  const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  function applyTheme() {
+    const pref = state.settings.theme || 'auto';
+    const dark = pref === 'dark' || (pref === 'auto' && darkQuery.matches);
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    document.querySelector('meta[name="theme-color"]').content = dark ? '#0b0b10' : '#e9e7e1';
+    $('themeBtn').innerHTML = dark ? ICON_SUN : ICON_MOON;
+    $('themeBtn').setAttribute('aria-label', dark ? 'Switch to day mode' : 'Switch to night mode');
+    $('themeSel').value = pref;
+  }
+  $('themeBtn').onclick = () => {
+    state.settings.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    save('settings'); applyTheme();
+  };
+  $('themeSel').onchange = e => { state.settings.theme = e.target.value; save('settings'); applyTheme(); };
+  darkQuery.addEventListener('change', applyTheme);
+  applyTheme();
+
+  // ---------- settings ----------
+  $('leadSel').value = String(state.settings.lead);
+  $('snoozeSel').value = String(state.settings.snooze);
+  $('callAllToggle').checked = state.settings.callAll;
+  $('speakToggle').checked = state.settings.speak;
+  $('clientIdInput').value = state.settings.clientId;
+  $('leadSel').onchange = e => { state.settings.lead = +e.target.value; save('settings'); };
+  $('snoozeSel').onchange = e => { state.settings.snooze = +e.target.value; save('settings'); };
+  $('callAllToggle').onchange = e => { state.settings.callAll = e.target.checked; save('settings'); render(); };
+  $('speakToggle').onchange = e => { state.settings.speak = e.target.checked; save('settings'); };
+  $('saveClientBtn').onclick = () => {
+    state.settings.clientId = $('clientIdInput').value.trim();
+    save('settings'); render(); toast('Saved. Now tap Connect Google.');
+  };
+  $('disconnectBtn').onclick = () => {
+    if (state.token && window.google && google.accounts) google.accounts.oauth2.revoke(state.token.access_token, () => {});
+    state.token = null; state.googleEvents = []; state.calendarList = []; state.lastSync = 0;
+    save('token', 'googleEvents', 'calendarList', 'lastSync'); render(); toast('Disconnected');
+  };
+  $('connectBtn').onclick = syncGoogle;
+
+  // drop your own tasks once they're more than 2 days old (unless they still need to go to Google)
+  state.manual = state.manual.filter(m => m.pendingGoogle || Date.now() - new Date(m.start).getTime() < 2 * 86400000);
+  save('manual');
+
+  render();
+  applyWake();
+  tick();
+  if (!state.settings.onboarded) showWizard(0);
+})();
+</script>
+</body>
+</html>
